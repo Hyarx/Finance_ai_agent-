@@ -26,6 +26,7 @@ Each agent uses custom Python tools and a RAG knowledge base built
 with ChromaDB containing financial standards (Basel III, ISA, IFRS).
 
 ## How to use it
+Run app.py in one terminal and use the following command in a second terminal:
 
 ```bash
 curl -X POST https://YOUR_URL/ask \
