@@ -158,6 +158,14 @@ def simulate_garch_path(omega, alpha, beta, initial_vol, n_days, n_sim):
     paths[:, -1] = returns.sum(axis=1)
     return paths
 
+"""
+    The modelisation of the financial risk is based on a GARCH(1,1) model for volatility,
+    VaR and Expected Shortfall for risk measures. This part was seen in the lecture and 
+    project during a course in HEC, financial risk modeling. 
+
+    The Altman Z-Score is a well-known bankruptcy prediction model that combines several 
+    financial ratios to assess the likelihood of distress and the help of AI.
+"""
 def _single_stock_risk(ticker: str, horizon: int = 1) -> str:
     """Single stock risk analysis."""
 
@@ -330,10 +338,43 @@ def _portfolio_risk(tickers: list, weights: list = None, horizon: int = 1) -> st
         portfolio_returns = sim_returns_h @ weights
 
     print(f"[INFO] Computing VaR and ES...")
-    # ... reste du code inchangé
     
+    VaR_99 = float(np.percentile(portfolio_returns, 1))
+    VaR_95 = float(np.percentile(portfolio_returns, 5))
+    ES_975 = float(portfolio_returns[portfolio_returns <= np.percentile(portfolio_returns, 2.5)].mean())
+
+    contributions = {}
+    for i, ticker in enumerate(tickers):
+        contrib = weights[i] * np.cov(sim_returns_h[:, i], portfolio_returns)[0, 1] / np.std(portfolio_returns)
+        contributions[ticker] = contrib
+
     print(f"[INFO] Portfolio risk done!")
-    return f"""..."""  # ton return existant inchangé
+
+    garch_summary = ""
+    for ticker in tickers:
+        res = garch_results[ticker]
+        a = res.params["alpha[1]"]
+        b = res.params["beta[1]"]
+        garch_summary += f"  {ticker}: α={a:.3f} β={b:.3f} pers={a+b:.3f} vol={vols[ticker]*100:.2f}%/day\n"
+
+    contrib_summary = ""
+    for ticker, contrib in contributions.items():
+        w = weights[tickers.index(ticker)]
+        contrib_summary += f"  {ticker}: w={w:.0%} contrib={contrib:.4f}\n"
+
+    return f"""
+=== PORTFOLIO RISK: {', '.join(tickers)} ({horizon}-day horizon) ===
+Weights: {', '.join([f'{t}={w:.0%}' for t, w in zip(tickers, weights)])}
+Monte Carlo: {n_sim} simulations | Copula: Gaussian
+
+GARCH(1,1) PER ASSET
+{garch_summary}
+PORTFOLIO RISK MEASURES
+VaR 99%: {VaR_99*100:.2f}% | VaR 95%: {VaR_95*100:.2f}% | ES 97.5%: {ES_975*100:.2f}%
+
+RISK CONTRIBUTIONS
+{contrib_summary}
+"""
 
 
 
@@ -392,14 +433,12 @@ def calculate_portfolio_performance(
     ticker_list = [t.strip() for t in tickers.split(",")]
     n = len(ticker_list)
 
-    # Poids
     if weights:
         w = np.array([float(x.strip()) for x in weights.split(",")])
         w = w / w.sum()
     else:
         w = np.array([1/n] * n)
 
-    # Données historiques
     all_returns = {}
     for ticker in ticker_list:
         hist = yf.download(ticker, period="2y", auto_adjust=True, progress=False)
@@ -409,19 +448,15 @@ def calculate_portfolio_performance(
 
     returns_df = pd.DataFrame(all_returns).dropna()
 
-    # Rendements et covariance sur l'horizon choisi
     mean_returns = returns_df.mean() * horizon
     cov_matrix = returns_df.cov() * horizon
 
-    # Taux sans risque ajusté à l'horizon
     risk_free = 0.04 * (horizon / 252)
 
-    # Performance du portefeuille actuel
     port_return = float(np.dot(w, mean_returns))
     port_vol = float(np.sqrt(w @ cov_matrix @ w))
     sharpe = (port_return - risk_free) / port_vol
 
-    # Optimisation — maximise le Sharpe
     def neg_sharpe(weights):
         r = np.dot(weights, mean_returns)
         v = np.sqrt(weights @ cov_matrix @ weights)
