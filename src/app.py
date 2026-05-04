@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-from agent import team
+from src.agent import team
 
 app = Flask(__name__)
 

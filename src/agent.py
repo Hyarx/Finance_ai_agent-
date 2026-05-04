@@ -4,7 +4,7 @@ from agno.agent import Agent
 from agno.team import Team
 from agno.models.google import Gemini
 from agno.tools.yfinance import YFinanceTools
-from tools import calculate_financial_risk, analyze_sentiment, get_sec_filings, calculate_portfolio_performance
+from src.tools import calculate_financial_risk, analyze_sentiment, get_sec_filings, calculate_portfolio_performance
 
 PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "info9023-lab2")
 
@@ -40,15 +40,7 @@ def load_documents(directory):
 load_documents("data/")
 
 def search_knowledge_base(query: str) -> str:
-    """Search the financial knowledge base for risk standards,
-    audit rules, financial ratios and market risk concepts.
 
-    Args:
-        query: Natural language search query.
-
-    Returns:
-        Most relevant passages from the knowledge base.
-    """
     results = collection.query(query_texts=[query], n_results=3)
     formatted = []
     for doc, meta in zip(results["documents"][0], results["metadatas"][0]):
@@ -74,6 +66,7 @@ financial_agent = Agent(
     IMMEDIATELY call calculate_financial_risk with all tickers and weights.
     THEN call calculate_portfolio_performance with same tickers and weights.
     Return ALL results without additional analysis.
+    NEVER truncate or summarize tool outputs.
     DO NOT ask clarifying questions. DO NOT explain what you are doing.
     Just call the tools and return the raw results.""",
 )
@@ -89,12 +82,11 @@ news_agent = Agent(
         analyze_sentiment,
     ],
     instructions="""You are a financial news analyst.
-    Use YFinance to get recent news about the company or each company
-    in the portfolio.
-    Use analyze_sentiment on the combined news content.
-    The sentiment polarity is between -1 (very negative) and 1 (very positive).
-    Subjectivity close to 0 means objective facts, close to 1 means opinions.
-    Identify key external risks and opportunities for each asset.""",
+    For EACH ticker in the portfolio, call get_company_news separately.
+    Then call analyze_sentiment ONCE on ALL combined news titles and summaries.
+    Return sentiment score for each company separately.
+    DO NOT make more than N+1 tool calls (N = number of tickers + 1 sentiment call).
+    Be direct and concise.""",
 )
 
 # --- Agent 3 : Audit & Compliance ---
@@ -117,19 +109,33 @@ team = Team(
     mode="coordinate",
     model=get_gemini(),
     members=[financial_agent, news_agent, audit_agent],
-    tools=[search_knowledge_base],
     instructions="""You lead a team of financial risk experts.
-    Be concise and efficient. 
-    
-    For a portfolio analysis, delegate ALL tasks simultaneously:
-    1. Financial Analyst: call calculate_financial_risk and 
-       calculate_portfolio_performance ONCE with all tickers
-    2. News Analyst: call analyze_sentiment ONCE with combined news
-    3. Audit Expert: call get_sec_filings for each company
-    
-    Synthesize into a SHORT structured report. Be concise.""",
+
+    Delegate ALL tasks simultaneously:
+    1. Financial Analyst: calculate_financial_risk + calculate_portfolio_performance
+    2. News Analyst: analyze_sentiment
+    3. Audit Expert: get_sec_filings + search_knowledge_base
+
+    Final report structure:
+
+    ## 1. Financial Risk
+    Include ALL numbers: GARCH (alpha, beta, persistence), volatility, 
+    VaR 99%/95%, ES 97.5%, ratios (ROE, P/E, D/E, Current Ratio), 
+    Altman Z-Score, Sharpe Ratio. Interpret each metric briefly.
+
+    ## 2. News Sentiment
+    Sentiment score, polarity, subjectivity, key risks and opportunities.
+
+    ## 3. Audit & Compliance
+    10-K date, Revenue, Net Income, Assets, Liabilities, Cash Flow, 
+    compliance status, red flags.
+
+    ## 4. Conclusion
+    Risk level, key strengths, key risks, recommendation (Hold/Buy/Sell).
+
+    Include ALL numbers. Interpret briefly. Be structured.""",
     markdown=True,
-    debug_mode=True, 
+    debug_mode=True,
 )
 if __name__ == "__main__":
     team.print_response(
