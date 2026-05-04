@@ -1,4 +1,4 @@
-# Finance_ai_agent-
+# Finance_ai_agent
 
 
 This project is a multi-agent AI system that analyses the financial 
